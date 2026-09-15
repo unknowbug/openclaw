@@ -291,6 +291,7 @@ export function renderChatComposerView(context: ChatComposerViewContext) {
             gatewayScope: props.gatewayScope,
             sessionIdentity: props.progressCardIdentity,
             activeRunId: props.runId,
+            snapshotRunId: activeSession?.lastRunId,
             readingHistory: props.readingHistory,
             onManipulate: props.onProgressManipulate,
             completedRunId: props.runStatus?.phase === "done" ? props.runStatus.runId : null,
