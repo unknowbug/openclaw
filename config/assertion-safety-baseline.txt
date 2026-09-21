@@ -2622,7 +2622,6 @@ src/gateway/node-registry.ts	2
 src/gateway/openai-agent-run-usage.ts	1
 src/gateway/openai-http.ts	22
 src/gateway/operator-approval-snapshot.ts	4
-src/gateway/operator-approval-store.ts	8
 src/gateway/operator-scopes.ts	1
 src/gateway/plugin-activation-runtime-config.ts	2
 src/gateway/portals/portal-service.ts	1

@@ -32,6 +32,10 @@ import {
   listManagedImageRecordEntriesInDatabase,
   listManagedImageOriginalMediaIdsInDatabase,
 } from "../gateway/managed-image-record-store.kernel.js";
+import {
+  executeOperatorApprovalCommand,
+  isOperatorApprovalCommand,
+} from "../gateway/operator-approval-store.worker.js";
 import { registerSessionGroupInDatabase } from "../gateway/session-group-registration.kernel.js";
 import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import * as deliveryQueue from "../infra/delivery-queue.worker.js";
@@ -146,12 +150,15 @@ export function executeSharedStateCommand(
   open: () => OpenClawStateDatabase,
   hasNativeDatabase: boolean,
 ): Operations[keyof Operations]["output"] {
-  if (command.type === "execApprovals.commitAuthorizations") {
-    return commitExecAuthorizationsInWorker(command.input, {
+  if (command.type === "execApprovals.commitAuthorizations" || isOperatorApprovalCommand(command)) {
+    const databaseOptions = {
       database: open(),
       path: context.databasePath,
       env: getSqliteWorkerStateContext().environment,
-    });
+    };
+    return command.type === "execApprovals.commitAuthorizations"
+      ? commitExecAuthorizationsInWorker(command.input, databaseOptions)
+      : executeOperatorApprovalCommand(command, databaseOptions);
   }
   if (isDevicePairingMutationCommand(command)) {
     return executeDevicePairingMutationInWorker(command, open());

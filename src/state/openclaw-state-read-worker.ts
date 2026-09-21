@@ -112,6 +112,9 @@ function captureCommand(command: OpenClawStateReadCommand): OpenClawStateReadCom
   if (command.type === "devicePairing.bootstrapContext") {
     return { ...command, input: { ...command.input } };
   }
+  if (command.type === "operatorApprovals.history") {
+    return { ...command, input: { ...command.input } };
+  }
   if (command.type === "pluginBlob.lookup") {
     const { pluginId, namespace, key } = command.input;
     return { type: command.type, input: { pluginId, namespace, key } };
@@ -196,6 +199,14 @@ function commandBytes(command: OpenClawStateReadRequest["command"]): number {
   }
   if (command.type === "devicePairing.list") {
     return bytes + 8 + Buffer.byteLength(command.publishedRevision ?? "");
+  }
+  if (command.type === "operatorApprovals.history") {
+    return (
+      bytes +
+      Buffer.byteLength(command.input.cursor ?? "", "utf8") +
+      Buffer.byteLength(command.input.kind ?? "", "utf8") +
+      16
+    );
   }
   if (command.type === "pluginBlob.lookup" || command.type === "pluginBlob.entries") {
     return (
