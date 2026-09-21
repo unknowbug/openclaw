@@ -1,6 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { WorkspaceAliasRepointedError } from "../agents/workspace-state-identity.js";
-import { WorkerSessionAlreadyAttachedError } from "../gateway/worker-environments/store-error.js";
+import { WorkerSessionAlreadyAttachedError } from "../gateway/worker-environments/session-attachment.js";
 import { SqliteCoordinatorError } from "../infra/sqlite-coordinator.js";
 import {
   isSqliteNativeOpenFailure,

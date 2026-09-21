@@ -110,7 +110,10 @@ function bootstrapReceiptFrom(row: Row): WorkerEnvironmentBootstrapReceipt | nul
     ...(installKind === null ? {} : { installKind }),
   });
 }
-function fromRow(row: Row, fallbackPorts: readonly number[]): WorkerEnvironmentRecord {
+export function decodeWorkerEnvironmentRow(
+  row: Row,
+  fallbackPorts: readonly number[],
+): WorkerEnvironmentRecord {
   const record = {
     environmentId: row.environment_id,
     providerId: row.provider_id,
@@ -192,8 +195,10 @@ function environmentRows(db: DatabaseSync) {
     );
 }
 function recordsFromRows(rows: readonly RowWithFallbackPorts[]): WorkerEnvironmentRecord[] {
-  // SAFETY: SQLite aggregates the numeric port column; endpointFrom validates the decoded ports.
-  return rows.map((row) => fromRow(row, JSON.parse(row.ssh_fallback_ports_json) as number[]));
+  return rows.map((row) =>
+    // SAFETY: SQLite aggregates the numeric port column; endpointFrom validates the decoded ports.
+    decodeWorkerEnvironmentRow(row, JSON.parse(row.ssh_fallback_ports_json) as number[]),
+  );
 }
 export function find(db: DatabaseSync, environmentId: string) {
   const rows = executeSqliteQuerySync(
@@ -264,6 +269,9 @@ export function readWorkerEnvironmentPrunePage(
   const { rows, ...page } = readTerminalWorkerEnvironmentPrunePage(db, input);
   return {
     ...page,
-    candidates: rows.map((observed) => ({ observed, record: fromRow(observed, []) })),
+    candidates: rows.map((observed) => ({
+      observed,
+      record: decodeWorkerEnvironmentRow(observed, []),
+    })),
   };
 }

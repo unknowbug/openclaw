@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { WorkerSessionAlreadyAttachedError } from "../gateway/worker-environments/store-error.js";
+import { WorkerSessionAlreadyAttachedError } from "../gateway/worker-environments/session-attachment.js";
 import { SqliteCoordinatorError } from "../infra/sqlite-coordinator.js";
 import {
   isSqliteNativeOpenFailure,

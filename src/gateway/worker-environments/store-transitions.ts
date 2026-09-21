@@ -7,8 +7,8 @@ import { normalizeWorkerDesktopEndpoint } from "./desktop-endpoint.js";
 import type { WorkerEnvironmentRecord } from "./environment-record.js";
 import { assertPreparedEnvironmentAttachment } from "./prepared-environment-store.js";
 import { hasWorkerEnvironmentSessionAttachment } from "./session-attachment-store.js";
+import { WorkerSessionAlreadyAttachedError } from "./session-attachment.js";
 import { canTransitionWorkerEnvironment } from "./state.js";
-import { WorkerSessionAlreadyAttachedError } from "./store-error.js";
 import type { WorkerEnvironmentKernelOptions } from "./store-kernel-options.js";
 import {
   credentialInsert,
