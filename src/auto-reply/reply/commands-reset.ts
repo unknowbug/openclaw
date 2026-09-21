@@ -60,7 +60,8 @@ export async function maybeHandleResetCommand(
   }
   const softReset = parseSoftResetCommand(params.command.commandBodyNormalized);
   if (softReset.matched) {
-    const boundAcpSessionKey = resolveBoundAcpThreadSessionKey(params);
+    const boundAcpSessionKey = await resolveBoundAcpThreadSessionKey(params);
+    params.opts?.abortSignal?.throwIfAborted();
     const boundAcpKey =
       boundAcpSessionKey && isAcpSessionKey(boundAcpSessionKey)
         ? boundAcpSessionKey.trim()
@@ -136,7 +137,8 @@ export async function maybeHandleResetCommand(
   const commandAction: ResetCommandAction =
     resetMatch[1]?.toLowerCase() === "reset" ? "reset" : "new";
   const resetTail = params.command.commandBodyNormalized.slice(resetMatch[0].length).trimStart();
-  const boundAcpSessionKey = resolveBoundAcpThreadSessionKey(params);
+  const boundAcpSessionKey = await resolveBoundAcpThreadSessionKey(params);
+  params.opts?.abortSignal?.throwIfAborted();
   const boundAcpKey =
     boundAcpSessionKey && isAcpSessionKey(boundAcpSessionKey)
       ? boundAcpSessionKey.trim()

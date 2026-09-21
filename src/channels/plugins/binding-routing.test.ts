@@ -201,7 +201,7 @@ describe("runtime conversation binding route", () => {
     }
     expect(result.boundSessionKey).toBe("agent:review:acp:session-1");
     expect(result.boundAgentId).toBe("review");
-    expect(result.route).toEqual({
+    expect(Object.fromEntries(Object.entries(result.route))).toEqual({
       agentId: "review",
       accountId: "default",
       channel: "demo",

@@ -1069,9 +1069,7 @@ export async function buildIMessageInboundContext(params: {
       label: conversationName,
     },
     route: {
-      agentId: decision.route.agentId,
-      dmScope: decision.route.dmScope,
-      accountId: decision.route.accountId,
+      ...decision.route,
       routeSessionKey: decision.route.sessionKey,
     },
     reply: {

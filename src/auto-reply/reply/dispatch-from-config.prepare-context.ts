@@ -92,7 +92,7 @@ export async function prepareDispatchOperationContext(state: PrepareDispatchDeli
     ? resolveConversationBindingContextFromMessage({ cfg, ctx })
     : undefined;
   const pluginOwnedBindingRecord = pluginBindingConversation
-    ? getSessionBindingService().resolveByConversation({
+    ? await getSessionBindingService().resolveByConversationAsync({
         channel: pluginBindingConversation.channel,
         accountId: pluginBindingConversation.accountId,
         conversationId: pluginBindingConversation.conversationId,
@@ -103,6 +103,7 @@ export async function prepareDispatchOperationContext(state: PrepareDispatchDeli
   const pluginBindingSessionKey = normalizeOptionalString(
     pluginOwnedBindingRecord?.targetSessionKey,
   );
+  const pluginBindingTargetKind = pluginOwnedBindingRecord?.targetKind;
   const persistPluginBindingUserTurn = async (): Promise<
     PluginBindingTranscriptOwner | undefined
   > => {
@@ -542,6 +543,8 @@ export async function prepareDispatchOperationContext(state: PrepareDispatchDeli
   const nextState = extendPreparedDispatchState(state, {
     sendBindingNotice,
     pluginOwnedBinding,
+    pluginBindingSessionKey,
+    pluginBindingTargetKind,
     persistPluginBindingUserTurn,
     sendPolicy,
     chatType,

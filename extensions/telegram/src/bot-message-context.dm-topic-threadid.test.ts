@@ -1,4 +1,9 @@
 // Telegram tests cover bot message contextm topic threadid plugin behavior.
+import {
+  registerSessionBindingAdapter,
+  unregisterSessionBindingAdapter,
+  type SessionBindingAdapter,
+} from "openclaw/plugin-sdk/conversation-runtime";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getRecordedUpdateLastRoute,
@@ -85,6 +90,51 @@ describe("buildTelegramMessageContext DM topic threadId in deliveryContext (#889
 
     expectRecordedRoute({ to: "telegram:1234", threadId: "42" });
   });
+
+  it.each([false, true])(
+    "preserves bound route metadata through the context builder with DM topic=%s",
+    async (isTopic) => {
+      const targetSessionKey = "agent:main:acp:telegram-bound";
+      const adapter: SessionBindingAdapter = {
+        channel: "telegram",
+        accountId: "default",
+        listBySession: () => [],
+        resolveByConversation: (conversation) =>
+          conversation.conversationId === "1234"
+            ? {
+                bindingId: "telegram-dm-binding",
+                targetSessionKey,
+                targetKind: "session",
+                conversation,
+                status: "active",
+                boundAt: 1,
+              }
+            : null,
+      };
+      registerSessionBindingAdapter(adapter);
+      try {
+        const ctx = await buildCtx({
+          message: {
+            chat: { id: 1234, type: "private" },
+            ...(isTopic ? { message_thread_id: 42, is_topic_message: true } : {}),
+          },
+        });
+        if (!ctx) {
+          throw new Error("expected a bound Telegram context");
+        }
+        expect(ctx.ctxPayload.SessionKey).toBe(
+          isTopic ? `${targetSessionKey}:thread:1234:42` : targetSessionKey,
+        );
+        const routeMetadataKeys = Object.getOwnPropertySymbols(ctx.route);
+        expect(routeMetadataKeys).not.toHaveLength(0);
+        for (const key of routeMetadataKeys) {
+          expect(Reflect.get(ctx.ctxPayload, key)).toBe(Reflect.get(ctx.route, key));
+        }
+      } finally {
+        unregisterSessionBindingAdapter({ channel: "telegram", accountId: "default", adapter });
+      }
+    },
+  );
 
   it("builds Telegram payloads through the shared channel turn context", async () => {
     const { buildChannelInboundEventContext } = await import("openclaw/plugin-sdk/channel-inbound");

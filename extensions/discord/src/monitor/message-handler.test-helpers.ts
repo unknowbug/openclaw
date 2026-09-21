@@ -80,3 +80,58 @@ export function createDiscordPreflightContext(channelId = "ch-1") {
     effectiveWasMentioned: false,
   };
 }
+
+export function createDiscordQueuePreflightContext(channelId = "ch-1") {
+  const discordConfig = {
+    enabled: true,
+    token: "test-token",
+    groupPolicy: "allowlist" as const,
+  };
+  const cfg: OpenClawConfig = {
+    channels: {
+      discord: discordConfig,
+    },
+    messages: {
+      inbound: {
+        debounceMs: 0,
+      },
+    },
+  };
+  return {
+    ...createDiscordPreflightContext(channelId),
+    cfg,
+    accountId: "default",
+    token: "test-token",
+    runtime: {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: (code: number): never => {
+        throw new Error(`exit ${code}`);
+      },
+    },
+    textLimit: 2_000,
+    replyToMode: "off" as const,
+    discordConfig,
+    messageText: "hello",
+    isDirectMessage: false,
+    isGuildMessage: true,
+    isGroupDm: false,
+    inboundEventKind: "message" as const,
+    effectiveWasMentioned: false,
+  };
+}
+
+export function createDiscordQueuePreflightContextForMessage(data: {
+  channel_id: string;
+  message: { id: string };
+}) {
+  const ctx = createDiscordQueuePreflightContext(data.channel_id);
+  return {
+    ...ctx,
+    message: { ...ctx.message, id: data.message.id },
+    data: {
+      ...ctx.data,
+      message: { ...ctx.data.message, id: data.message.id },
+    },
+  };
+}

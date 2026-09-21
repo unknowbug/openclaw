@@ -20,6 +20,7 @@ import {
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
 import { isCronRunSessionKey } from "../../sessions/session-key-utils.js";
+import { withConversationBindingRouteFacts } from "../conversation-binding-route-facts.js";
 import { ensureConfiguredBindingTargetReady } from "./binding-targets.js";
 import type { ConfiguredBindingResolution } from "./binding-types.js";
 import { resolveConfiguredBinding } from "./configured-binding-registry.js";
@@ -180,21 +181,22 @@ export function inspectRuntimeConversationBindingRoute(params: {
       ? (normalizeOptionalString(bindingRecord.metadata?.agentId) ?? params.route.agentId)
       : undefined,
   );
+  const route: ResolvedAgentRoute = {
+    ...params.route,
+    sessionKey: boundSessionKey,
+    agentId: boundAgentId,
+    lastRoutePolicy: deriveLastRoutePolicy({
+      sessionKey: boundSessionKey,
+      mainSessionKey: params.route.mainSessionKey,
+    }),
+    matchedBy: "binding.channel",
+  };
   return {
     bindingOwnerAvailable: true,
     bindingRecord,
     boundSessionKey,
     boundAgentId,
-    route: {
-      ...params.route,
-      sessionKey: boundSessionKey,
-      agentId: boundAgentId,
-      lastRoutePolicy: deriveLastRoutePolicy({
-        sessionKey: boundSessionKey,
-        mainSessionKey: params.route.mainSessionKey,
-      }),
-      matchedBy: "binding.channel",
-    },
+    route: withConversationBindingRouteFacts(route, bindingRecord, params.route.agentId),
   };
 }
 

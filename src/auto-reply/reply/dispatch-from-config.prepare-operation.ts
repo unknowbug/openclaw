@@ -24,6 +24,7 @@ import {
   loadAbortRuntime,
   loadFastApproveRuntime,
 } from "./dispatch-from-config.runtime-loaders.js";
+import { DispatchSessionRefreshRequiredError } from "./dispatch-session-refresh-error.js";
 import { REPLY_ADMISSION_TICKET } from "./reply-admission-ticket.js";
 import { extractShortModelName } from "./response-prefix-template.js";
 
@@ -66,7 +67,11 @@ export async function prepareDispatchOperation(state: PrepareDispatchOperationCo
     logKind: "fast_abort" | "fast_approve";
   }) => {
     if (pluginOwnedBinding) {
-      getSessionBindingService().touch(pluginOwnedBinding.bindingId, undefined, pluginOwnedBinding);
+      await getSessionBindingService().touchAsync(
+        pluginOwnedBinding.bindingId,
+        undefined,
+        pluginOwnedBinding,
+      );
     }
     emitMessageReceivedHooks();
     let queuedFinal = false;
@@ -124,6 +129,9 @@ export async function prepareDispatchOperation(state: PrepareDispatchOperationCo
     isCommandTargetCurrent: params.replyOptions?.isCommandTargetCurrent,
   });
   if (fastAbort.handled) {
+    if (fastAbort.aborted || (fastAbort.stoppedSubagents ?? 0) > 0) {
+      state.markInboundDedupeReplayUnsafe();
+    }
     return await finishFastCommand({
       payload: {
         text: formatAbortReplyTextResolver(
@@ -202,7 +210,29 @@ export async function prepareDispatchOperation(state: PrepareDispatchOperationCo
     if (isPreDispatchOperationAborted()) {
       return { status: "complete" as const, result: finishReplyOperationAbortedDispatch() };
     }
-    getSessionBindingService().touch(pluginOwnedBinding.bindingId, undefined, pluginOwnedBinding);
+    await getSessionBindingService().touchAsync(
+      pluginOwnedBinding.bindingId,
+      undefined,
+      pluginOwnedBinding,
+    );
+    const currentBinding =
+      await getSessionBindingService().resolveByConversationAsync(pluginOwnedBinding);
+    if (
+      currentBinding?.bindingId !== pluginOwnedBinding.bindingId ||
+      currentBinding.boundAt !== pluginOwnedBinding.boundAt ||
+      currentBinding.targetSessionKey !== state.pluginBindingSessionKey ||
+      currentBinding.targetKind !== state.pluginBindingTargetKind ||
+      currentBinding.metadata?.pluginBindingOwner !== "plugin" ||
+      currentBinding.metadata?.pluginId !== pluginOwnedBinding.pluginId ||
+      currentBinding.metadata?.pluginRoot !== pluginOwnedBinding.pluginRoot
+    ) {
+      throw new DispatchSessionRefreshRequiredError(
+        new Error("conversation binding changed while recording activity"),
+      );
+    }
+    if (isPreDispatchOperationAborted()) {
+      return { status: "complete" as const, result: finishReplyOperationAbortedDispatch() };
+    }
     params.replyOptions ??= {};
     if (
       shouldBypassPluginOwnedBindingForCommand(

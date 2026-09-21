@@ -56,7 +56,7 @@ export function resolveSessionConversationBindingContext(
   };
 }
 
-export function resolveBoundAcpSessionForCommandReset(params: {
+export async function resolveBoundAcpSessionForCommandReset(params: {
   cfg: OpenClawConfig;
   ctx: MsgContext;
   bindingContext?: {
@@ -65,10 +65,10 @@ export function resolveBoundAcpSessionForCommandReset(params: {
     conversationId: string;
     parentConversationId?: string;
   } | null;
-}): string | undefined {
+}): Promise<string | undefined> {
   const bindingContext =
     params.bindingContext ?? resolveSessionConversationBindingContext(params.cfg, params.ctx);
-  return resolveEffectiveResetTargetSessionKey({
+  return await resolveEffectiveResetTargetSessionKey({
     cfg: params.cfg,
     channel: bindingContext?.channel,
     accountId: bindingContext?.accountId,

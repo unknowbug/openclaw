@@ -79,7 +79,7 @@ function resolveRawConfiguredAcpSessionKey(params: {
   return undefined;
 }
 
-export function resolveEffectiveResetTargetSessionKey(params: {
+export async function resolveEffectiveResetTargetSessionKey(params: {
   cfg: OpenClawConfig;
   channel?: string | null;
   accountId?: string | null;
@@ -89,7 +89,7 @@ export function resolveEffectiveResetTargetSessionKey(params: {
   allowNonAcpBindingSessionKey?: boolean;
   skipConfiguredFallbackWhenActiveSessionNonAcp?: boolean;
   fallbackToActiveAcpWhenUnbound?: boolean;
-}): string | undefined {
+}): Promise<string | undefined> {
   const activeSessionKey = normalizeOptionalString(params.activeSessionKey);
   const activeAcpSessionKey =
     activeSessionKey && isAcpSessionKey(activeSessionKey) ? activeSessionKey : undefined;
@@ -108,7 +108,7 @@ export function resolveEffectiveResetTargetSessionKey(params: {
   const parentConversationId = normalizeOptionalString(params.parentConversationId) || undefined;
   const allowNonAcpBindingSessionKey = Boolean(params.allowNonAcpBindingSessionKey);
 
-  const serviceBinding = getSessionBindingService().resolveByConversation({
+  const serviceBinding = await getSessionBindingService().resolveByConversationAsync({
     channel,
     accountId,
     conversationId,

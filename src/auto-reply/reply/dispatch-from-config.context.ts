@@ -1,10 +1,18 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { normalizeChatType } from "../../channels/chat-type.js";
+import {
+  matchesConversationBindingRouteFacts,
+  readConversationBindingRouteFacts,
+} from "../../channels/conversation-binding-route-facts.js";
 import { resolveGroupSessionKey } from "../../config/sessions/group.js";
+import { SessionWorkStartChangedError } from "../../config/sessions/lifecycle.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
+import {
+  getSessionBindingService,
+  type SessionBindingRecord,
+} from "../../infra/outbound/session-binding-service.js";
 import { isPluginOwnedSessionBindingRecord } from "../../plugins/conversation-binding-metadata.js";
 import { isAcpSessionKey } from "../../routing/session-key.js";
 import { classifySessionStateActor } from "../../sessions/session-state-events.js";
@@ -18,6 +26,7 @@ import {
   loadSessionStoreEntry,
   resolveSessionStorePathCore,
 } from "./dispatch-from-config.runtime.js";
+import { DispatchSessionRefreshRequiredError } from "./dispatch-session-refresh-error.js";
 import type { ReplyOperation } from "./reply-run-registry.js";
 import { isSlackDirectRoutedThreadTurn } from "./routed-delivery-thread.js";
 import { canReplaceRestartTombstoneFromParent } from "./session-parent-fork-prepare.js";
@@ -95,19 +104,51 @@ export function resolveSessionStoreLookup(
   }
 }
 
-export function resolveBoundAcpDispatchSessionKey(params: {
+function assertPreparedAcpRouteBinding(
+  ctx: FinalizedMsgContext,
+  current: SessionBindingRecord | null,
+): void {
+  const expected = readConversationBindingRouteFacts(ctx);
+  if (
+    expected &&
+    (!matchesConversationBindingRouteFacts(expected, current) ||
+      (current && isPluginOwnedSessionBindingRecord(current)))
+  ) {
+    // Session snapshot retries retain this channel-prepared context. Only ingress
+    // can rebuild its route from the raw event and the current binding owner.
+    throw new SessionWorkStartChangedError(
+      "Conversation binding changed while preparing the reply. Retry the message.",
+    );
+  }
+}
+
+export async function assertPreparedAcpRouteCurrent(ctx: FinalizedMsgContext): Promise<void> {
+  const expected = readConversationBindingRouteFacts(ctx);
+  if (!expected) {
+    return;
+  }
+  const current = await getSessionBindingService().resolveByConversationAsync(
+    expected.conversation,
+  );
+  assertPreparedAcpRouteBinding(ctx, current);
+}
+
+export async function resolveBoundAcpDispatchSessionKey(params: {
   ctx: FinalizedMsgContext;
   cfg: OpenClawConfig;
-}): string | undefined {
-  const bindingContext = resolveConversationBindingContextFromMessage({
-    cfg: params.cfg,
-    ctx: params.ctx,
-  });
+}): Promise<string | undefined> {
+  const preparedRoute = readConversationBindingRouteFacts(params.ctx);
+  const bindingContext =
+    preparedRoute?.conversation ??
+    resolveConversationBindingContextFromMessage({
+      cfg: params.cfg,
+      ctx: params.ctx,
+    });
   if (!bindingContext) {
     return undefined;
   }
 
-  const binding = getSessionBindingService().resolveByConversation({
+  const binding = await getSessionBindingService().resolveByConversationAsync({
     channel: bindingContext.channel,
     accountId: bindingContext.accountId,
     conversationId: bindingContext.conversationId,
@@ -115,6 +156,7 @@ export function resolveBoundAcpDispatchSessionKey(params: {
       ? { parentConversationId: bindingContext.parentConversationId }
       : {}),
   });
+  assertPreparedAcpRouteBinding(params.ctx, binding);
   const targetSessionKey = normalizeOptionalString(binding?.targetSessionKey);
   if (!binding || !targetSessionKey || !isAcpSessionKey(targetSessionKey)) {
     return undefined;
@@ -122,8 +164,34 @@ export function resolveBoundAcpDispatchSessionKey(params: {
   if (isPluginOwnedSessionBindingRecord(binding)) {
     return undefined;
   }
-  getSessionBindingService().touch(binding.bindingId, undefined, binding.conversation);
-  return targetSessionKey;
+  const { bindingId, boundAt, targetSessionKey: boundTargetSessionKey, targetKind } = binding;
+  const scope = { ...binding.conversation };
+  await getSessionBindingService().touchAsync(bindingId, undefined, scope);
+  const currentBinding =
+    await getSessionBindingService().resolveByConversationAsync(bindingContext);
+  assertPreparedAcpRouteBinding(params.ctx, currentBinding);
+  if (
+    currentBinding &&
+    (currentBinding.bindingId !== bindingId ||
+      currentBinding.boundAt !== boundAt ||
+      currentBinding.targetSessionKey !== boundTargetSessionKey ||
+      currentBinding.targetKind !== targetKind ||
+      currentBinding.conversation.channel !== scope.channel ||
+      currentBinding.conversation.accountId !== scope.accountId)
+  ) {
+    throw new DispatchSessionRefreshRequiredError(
+      new Error("conversation binding changed while recording activity"),
+    );
+  }
+  const currentTargetSessionKey = normalizeOptionalString(currentBinding?.targetSessionKey);
+  return currentBinding &&
+    currentTargetSessionKey &&
+    isAcpSessionKey(currentTargetSessionKey) &&
+    !isPluginOwnedSessionBindingRecord(currentBinding)
+    ? preparedRoute
+      ? normalizeOptionalString(params.ctx.SessionKey)
+      : currentTargetSessionKey
+    : undefined;
 }
 
 export function resolveDispatchResetAdmission(params: {

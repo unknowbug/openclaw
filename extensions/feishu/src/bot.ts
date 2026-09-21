@@ -1418,8 +1418,8 @@ export async function handleFeishuMessage(params: {
           threadId: ctx.rootId && isTopicSessionForThread ? ctx.rootId : undefined,
         },
         route: {
+          ...route,
           agentId,
-          dmScope: route.dmScope,
           accountId: agentAccountId,
           routeSessionKey: agentSessionKey,
         },

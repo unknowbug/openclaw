@@ -45,6 +45,8 @@ export const databaseWorkerCoreTestFiles = [
   "src/auto-reply/reply/agent-runner-execution-cli-commentary.test.ts",
   "src/auto-reply/reply/agent-runner-memory.private-transcript.test.ts",
   "src/auto-reply/reply/agent-runner-required-maintenance.pending-input.test.ts",
+  "src/auto-reply/reply/session.acp-reset-routing.test.ts",
+  "src/auto-reply/reply/session.test.ts",
   "src/agents/worktrees/empty-source.test.ts",
   "src/agents/worktrees/registry-read.test.ts",
   "src/agents/worktrees/service-branches.test.ts",
