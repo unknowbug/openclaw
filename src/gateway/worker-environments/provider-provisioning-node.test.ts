@@ -9,6 +9,7 @@ import type {
   WorkerProvider,
 } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
+import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import type {
   NodeWorkerSupervisorNodeProof,
   NodeWorkerSupervisorTransport,
@@ -247,7 +248,7 @@ describe("node worker provider provisioning", () => {
 
   it("supplies replay-safe enrollment only to providers that require it", async () => {
     const prepareNodeEnrollment = vi.fn(async (record) => {
-      const enrolled = support.testState.store.ensureNodeEnrollment(record.environmentId);
+      const enrolled = await support.testState.store.ensureNodeEnrollment(record.environmentId);
       if (!enrolled.nodeSetupId) {
         throw new Error("expected persisted cloud enrollment ownership");
       }
@@ -369,7 +370,7 @@ describe("node worker provider provisioning", () => {
         const record = support.testState.store.list()[0]!;
         expect(record.state).toBe("requested");
         if (outcome === "teardown") {
-          support.testState.store.requestDestroy({
+          await support.testState.store.requestDestroy({
             environmentId: record.environmentId,
             state: "requested",
           });
@@ -542,7 +543,7 @@ describe("node worker provider provisioning", () => {
     const stop = vi.spyOn(nodeTunnels, "stop");
     const transitions = vi.spyOn(support.testState.store, "transition");
     const prepareNodeEnrollment = vi.fn(async (record) => {
-      const enrolled = support.testState.store.ensureNodeEnrollment(record.environmentId);
+      const enrolled = await support.testState.store.ensureNodeEnrollment(record.environmentId);
       if (!enrolled.nodeSetupId) {
         throw new Error("expected persisted cloud enrollment ownership");
       }
@@ -568,10 +569,14 @@ describe("node worker provider provisioning", () => {
           if (enrollment?.mode !== "connect") {
             throw new Error("expected pending enrollment");
           }
-          bindCloudWorkerSetupCompletion({
-            db: support.testState.stateDb.db,
-            completion: { setupId: enrollment.setupId, deviceId, completedAtMs: 1_000 },
-          });
+          runOpenClawStateWriteTransaction(
+            ({ db }) =>
+              bindCloudWorkerSetupCompletion({
+                db,
+                completion: { setupId: enrollment.setupId, deviceId, completedAtMs: 1_000 },
+              }),
+            { database: support.testState.stateDb },
+          );
           throw new Error("provider response was lost after node allocation");
         },
         destroy,

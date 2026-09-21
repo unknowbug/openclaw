@@ -33,6 +33,8 @@ import {
   listManagedImageOriginalMediaIdsInDatabase,
 } from "../gateway/managed-image-record-store.kernel.js";
 import { registerSessionGroupInDatabase } from "../gateway/session-group-registration.kernel.js";
+import { isWorkerEnvironmentCommand } from "../gateway/worker-environments/store-worker-contract.js";
+import { executeWorkerEnvironmentCommand } from "../gateway/worker-environments/store.worker.js";
 import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
 import * as deliveryQueue from "../infra/delivery-queue.worker.js";
 import * as deviceAuth from "../infra/device-auth-store.kernel.js";
@@ -159,6 +161,9 @@ export function executeSharedStateCommand(
       open(),
       getSqliteWorkerStateContext().environment,
     );
+  }
+  if (isWorkerEnvironmentCommand(command)) {
+    return executeWorkerEnvironmentCommand(command, open());
   }
   if (command.type === "audit.events.list") {
     return listAuditEventsInDatabase(open().db, command.input);

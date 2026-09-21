@@ -1,5 +1,6 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { WorkspaceAliasRepointedError } from "../agents/workspace-state-identity.js";
+import { WorkerSessionAlreadyAttachedError } from "../gateway/worker-environments/store-error.js";
 import { SqliteCoordinatorError } from "../infra/sqlite-coordinator.js";
 import {
   isSqliteNativeOpenFailure,
@@ -35,6 +36,7 @@ type ErrorValue =
   | { undefined: true };
 
 type ErrorIdentity =
+  | { type: "worker-session-already-attached"; sessionId: string; environmentId: string }
   | {
       type: "workspace-alias-repointed";
       aliasPath: string;
@@ -87,6 +89,13 @@ export type OpenClawStateWorkerErrorPayload = {
 type ErrorGraphOptions = { includeOrdinary?: boolean };
 
 function identifyError(error: Error): ErrorIdentity {
+  if (error instanceof WorkerSessionAlreadyAttachedError) {
+    return {
+      type: "worker-session-already-attached",
+      sessionId: error.sessionId,
+      environmentId: error.environmentId,
+    };
+  }
   if (error instanceof PluginBlobStoreError) {
     return {
       type: "plugin-blob",
@@ -261,6 +270,10 @@ function isBlobOperation(value: unknown): value is PluginBlobStoreError["operati
 
 function parseIdentity(node: Record<string, unknown>): ErrorIdentity | undefined {
   switch (node.type) {
+    case "worker-session-already-attached":
+      return typeof node.sessionId === "string" && typeof node.environmentId === "string"
+        ? { type: node.type, sessionId: node.sessionId, environmentId: node.environmentId }
+        : undefined;
     case "workspace-alias-repointed":
       return typeof node.aliasPath === "string" &&
         typeof node.storedWorkspacePath === "string" &&
@@ -410,6 +423,8 @@ function unreachableErrorNode(node: never): never {
 
 function createError(node: ErrorNode): Error {
   switch (node.type) {
+    case "worker-session-already-attached":
+      return new WorkerSessionAlreadyAttachedError(node.sessionId, node.environmentId);
     case "workspace-alias-repointed":
       return new WorkspaceAliasRepointedError(node);
     case "error":

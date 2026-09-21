@@ -18,6 +18,11 @@ import type {
   WorkerPlacementConflictBinding,
   WorkerSessionPlacementReadResult,
 } from "../gateway/worker-environments/placement-read-projection.types.js";
+import type {
+  WorkerEnvironmentFacts,
+  WorkerEnvironmentPrunePage,
+  WorkerEnvironmentPruneReadInput,
+} from "../gateway/worker-environments/store-worker-contract.js";
 import type { readExecApprovalsConfigRow } from "../infra/exec-approvals-sqlite.js";
 import type {
   ConversationRef,
@@ -67,6 +72,8 @@ export type OpenClawStateReadCommand =
       };
     }[keyof SkillLibraryReadOnlyOperations]
   | { type: "agentDatabaseRegistry.read" }
+  | { type: "workerEnvironments.snapshot"; ids?: readonly string[] }
+  | { type: "workerEnvironments.pruneCandidates"; input: WorkerEnvironmentPruneReadInput }
   | { type: "onboardingRecommendations.read"; configKey: string }
   | { type: "userProfiles.reconcile"; profileId: string }
   | { type: "userProfiles.email.resolve"; email: string }
@@ -128,6 +135,18 @@ export type OpenClawStateReadReply = (
       type: "agentDatabaseRegistry.read";
       sourceAdmitted?: true;
       result: OpenClawAgentDatabaseRegistryReadResult;
+    }
+  | {
+      ok: true;
+      type: "workerEnvironments.pruneCandidates";
+      sourceAdmitted: true;
+      page: WorkerEnvironmentPrunePage;
+    }
+  | {
+      ok: true;
+      type: "workerEnvironments.snapshot";
+      sourceAdmitted: true;
+      facts: WorkerEnvironmentFacts;
     }
   | {
       ok: true;

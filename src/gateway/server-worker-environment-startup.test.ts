@@ -15,7 +15,10 @@ import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { markPluginRegistryActive } from "../plugins/registry-lifecycle.js";
 import type { WorkerProvider } from "../plugins/types.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  closeOpenClawStateDatabaseForTest,
+} from "../state/openclaw-state-db.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import { createNodeDesktopStreamBroker } from "./desktop/node-stream-broker.js";
 import { createDesktopSessionRegistry } from "./desktop/session-registry.js";
@@ -37,10 +40,11 @@ import {
 const DEVICE_ID = "revoked-device";
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
   vi.useRealTimers();
   setActiveNodeContext(null);
+  await closeOpenClawStateDatabaseAsync();
   closeOpenClawStateDatabaseForTest();
   resetConfigRuntimeState();
 });
@@ -163,19 +167,19 @@ describe("gateway worker environment startup", () => {
     try {
       await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
         const startup = await loadGatewayWorkerEnvironmentStartupState();
-        startup.store.createIntent({
+        await startup.store.createIntent({
           environmentId: "device-environment",
           providerId: DEVICE_WORKER_PROVIDER_ID,
           profileId: `device:${DEVICE_ID}`,
           profileSnapshot: { install: "bundle", settings: { device: DEVICE_ID } },
           provisionOperationId: "provision:device-environment",
         });
-        startup.store.transition({
+        await startup.store.transition({
           environmentId: "device-environment",
           from: "requested",
           to: "provisioning",
         });
-        startup.store.transition({
+        await startup.store.transition({
           environmentId: "device-environment",
           from: "provisioning",
           to: "ready",
@@ -231,6 +235,7 @@ describe("gateway worker environment startup", () => {
         }
       });
     } finally {
+      await closeOpenClawStateDatabaseAsync();
       closeOpenClawStateDatabaseForTest();
     }
   });
@@ -240,21 +245,21 @@ describe("gateway worker environment startup", () => {
     await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
       setRuntimeConfigSnapshot({ cloudWorkers: { desktop: true } });
       const startup = await loadGatewayWorkerEnvironmentStartupState();
-      const intent = startup.store.createIntent({
+      const intent = await startup.store.createIntent({
         environmentId: "node-desktop-environment",
         providerId: "fake-provider",
         profileId: "desktop-profile",
         profileSnapshot: { settings: { desktop: true } },
         provisionOperationId: "provision:node-desktop-environment",
       });
-      const provisioning = startup.store.transition({
+      const provisioning = await startup.store.transition({
         environmentId: intent.environmentId,
         from: intent.state,
         to: "provisioning",
       });
       const nodeId = "node-desktop-device";
       const app = { id: "terminal" as const, executablePath: "/usr/bin/true" };
-      const record = startup.store.transition({
+      const record = await startup.store.transition({
         environmentId: provisioning.environmentId,
         from: provisioning.state,
         to: "ready",
@@ -354,7 +359,7 @@ describe("prepared node workspace ownership over the Gateway transport", () => {
           return;
         }
         await f.register();
-        f.attach();
+        await f.attach();
         await f.bind();
         expect(f.received.map((response) => response.ok)).toEqual([true, true]);
         const acquired = f.workspace.acquireManagedWorkspace({
@@ -386,7 +391,7 @@ describe("prepared node workspace ownership over the Gateway transport", () => {
     await withPreparedNodeAcknowledgement(root, async (f) => {
       if (action === "bind") {
         await f.register();
-        f.attach();
+        await f.attach();
       }
       const entered = createDeferredCore();
       const release = createDeferredCore();
@@ -409,12 +414,12 @@ describe("prepared node workspace ownership over the Gateway transport", () => {
           f.setPreparedWorkspace(false);
         } else if (loss === "owner") {
           if (action === "register") {
-            f.startup.store.requestDestroy({
+            await f.startup.store.requestDestroy({
               environmentId: f.record.environmentId,
               state: "provisioning",
             });
           } else {
-            f.startup.store.revokeEnvironmentCredential(f.record.environmentId);
+            await f.startup.store.revokeEnvironmentCredential(f.record.environmentId);
           }
         } else if (loss === "placement") {
           const placement = f.startup.placementStore.get(f.binding.sessionId)!;

@@ -15,6 +15,7 @@ import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner
 import { WorkerProviderError, type WorkerProvider } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import {
+  closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
   openOpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
@@ -138,11 +139,12 @@ describe("worker environment service provision replay", () => {
 
     await first.stop();
     support.testState.service = undefined;
+    await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
     support.testState.stateDb = openOpenClawStateDatabase({
       env: { OPENCLAW_STATE_DIR: support.testState.root },
     });
-    support.testState.store = createWorkerEnvironmentStore({
+    support.testState.store = await createWorkerEnvironmentStore({
       database: support.testState.stateDb,
       now: () => support.testState.nowMs,
     });
@@ -265,11 +267,12 @@ describe("worker environment service provision replay", () => {
     await first.stop();
     events.push("first:stopped");
     support.testState.service = undefined;
+    await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
     support.testState.stateDb = openOpenClawStateDatabase({
       env: { OPENCLAW_STATE_DIR: support.testState.root },
     });
-    support.testState.store = createWorkerEnvironmentStore({
+    support.testState.store = await createWorkerEnvironmentStore({
       database: support.testState.stateDb,
       now: () => support.testState.nowMs,
     });
@@ -307,7 +310,7 @@ describe("worker environment service provision replay", () => {
         ],
       }),
       prepareNodeEnrollment: async (record) => {
-        const enrolled = support.testState.store.ensureNodeEnrollment(record.environmentId);
+        const enrolled = await support.testState.store.ensureNodeEnrollment(record.environmentId);
         return {
           mode: "connect" as const,
           setupCode: "setup-code",
@@ -517,11 +520,12 @@ describe("worker environment service provision replay", () => {
 
       await workerService.stop();
       support.testState.service = undefined;
+      await closeOpenClawStateDatabaseAsync();
       closeOpenClawStateDatabaseForTest();
       support.testState.stateDb = openOpenClawStateDatabase({
         env: { OPENCLAW_STATE_DIR: support.testState.root },
       });
-      support.testState.store = createWorkerEnvironmentStore({
+      support.testState.store = await createWorkerEnvironmentStore({
         database: support.testState.stateDb,
         now: () => support.testState.nowMs,
       });

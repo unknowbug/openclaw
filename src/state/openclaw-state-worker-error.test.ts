@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { WorkerSessionAlreadyAttachedError } from "../gateway/worker-environments/store-error.js";
 import { SqliteCoordinatorError } from "../infra/sqlite-coordinator.js";
 import {
   isSqliteNativeOpenFailure,
@@ -46,6 +47,17 @@ function roundTrip(error: Error): Error {
 }
 
 describe("shared-state worker error transport", () => {
+  it("preserves the attachment conflict identity used for credential recovery", () => {
+    const original = new WorkerSessionAlreadyAttachedError("session", "environment");
+    const decoded = roundTrip(original);
+    expect(decoded).toBeInstanceOf(WorkerSessionAlreadyAttachedError);
+    expect(decoded).toMatchObject({
+      message: original.message,
+      sessionId: "session",
+      environmentId: "environment",
+    });
+  });
+
   it.each([undefined, "SQLITE_IOERR"])(
     "preserves native-open provenance before lease dispatch (code: %s)",
     (code) => {

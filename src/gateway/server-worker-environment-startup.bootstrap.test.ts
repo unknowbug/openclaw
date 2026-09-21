@@ -11,7 +11,10 @@ import { createPluginRecord } from "../plugins/loader-records.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { closeOpenClawStateDatabaseForTest } from "../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  closeOpenClawStateDatabaseForTest,
+} from "../state/openclaw-state-db.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import * as version from "../version.js";
 import { createDesktopSessionRegistry } from "./desktop/session-registry.js";
@@ -30,8 +33,9 @@ import * as transferModule from "./worker-environments/worker-bootstrap-artifact
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const { fixture } = useNodeBootstrapArtifactFixtures();
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  await closeOpenClawStateDatabaseAsync();
   closeOpenClawStateDatabaseForTest();
   resetConfigRuntimeState();
 });
@@ -118,14 +122,14 @@ describe("cloud bootstrap plugin generations", () => {
           if (managerResult?.type !== "return" || transferResult?.type !== "return") {
             throw new Error("Gateway managers were not created");
           }
-          startup.store.createIntent({
+          await startup.store.createIntent({
             environmentId,
             providerId: "fake-provider",
             profileId: "test-profile",
             profileSnapshot: { executionMode: "remote-exec", settings: {} },
             provisionOperationId: `provision:${environmentId}`,
           });
-          const record = startup.store.transition({
+          const record = await startup.store.transition({
             environmentId,
             from: "requested",
             to: "provisioning",
@@ -152,6 +156,7 @@ describe("cloud bootstrap plugin generations", () => {
             artifactKey: retainedHash,
           }),
         ).toBeUndefined();
+        await closeOpenClawStateDatabaseAsync();
         closeOpenClawStateDatabaseForTest();
         const second = await start("second-process");
         try {
@@ -289,14 +294,14 @@ describe("cloud bootstrap plugin generations", () => {
       }
       const manager = enrollmentResult.value;
       const begin = async (id: string) => {
-        startup.store.createIntent({
+        await startup.store.createIntent({
           environmentId: id,
           providerId: "fake-provider",
           profileId: "test-profile",
           profileSnapshot: { executionMode: "remote-exec", settings: {} },
           provisionOperationId: `provision:${id}`,
         });
-        const record = startup.store.transition({
+        const record = await startup.store.transition({
           environmentId: id,
           from: "requested",
           to: "provisioning",

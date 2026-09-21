@@ -93,12 +93,12 @@ describe("node provisioning installer ownership", () => {
         const record = support.testState.store.list()[0]!;
         expect(record.state).toBe("provisioning");
         if (change === "destroy intent") {
-          support.testState.store.requestDestroy({
+          await support.testState.store.requestDestroy({
             environmentId: record.environmentId,
             state: record.state,
           });
         } else {
-          support.testState.store.transition({
+          await support.testState.store.transition({
             environmentId: record.environmentId,
             from: record.state,
             to: "ready",
@@ -150,7 +150,7 @@ describe("node provisioning installer ownership", () => {
     try {
       await Promise.race([fixture.entered.promise, creation]);
       const record = support.testState.store.list()[0]!;
-      support.testState.store.requestDestroy({
+      await support.testState.store.requestDestroy({
         environmentId: record.environmentId,
         state: record.state,
       });

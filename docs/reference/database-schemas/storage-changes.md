@@ -24,6 +24,22 @@ and publishes the result. Avoid exposing a generic SQL callback to application
 code or adding an asynchronous wrapper around an existing asynchronous facade.
 The plugin KV API already has asynchronous methods over its SQLite owner.
 
+Worker environment inventory is a committed, revisioned projection owned by its
+store. Startup hydrates through the read-only worker scope; runtime mutations use
+the shared-state SQLite worker broker and re-read environment, credential, and
+placement authority inside the committing transaction. The broker rechecks live
+caller authority before commit, and the store fences affected environments until
+committed facts are installed. List and keyed inventory reads use the projection.
+
+Placement activation, prepared-environment consumption, and node pairing retain
+their existing atomic transactions and publish the fields already prepared by
+those transactions through the same inventory owner after commit, without another
+SQLite read. Field revisions preserve newer native publications when a delayed
+worker reply supplies the rest of the committed row. Retention reads bounded pages
+in a read-only worker, applies the existing demand policy, and deletes only exact,
+still-unreferenced observations in the write worker. Shutdown joins accepted writes;
+stored rows, schemas, retention policy, configuration, and update behavior are unchanged.
+
 Task maintenance awaits global plugin-state expiry in the shared-state worker.
 The sweep samples expiry time inside its admitted write transaction and deletes
 at most 1,024 rows. Writer waits leave the Gateway event loop available, while

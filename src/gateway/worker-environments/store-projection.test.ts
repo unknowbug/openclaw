@@ -1,0 +1,220 @@
+import { afterEach, expect, it, vi } from "vitest";
+import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import {
+  deferSqlitePostCommitPublication,
+  withSqlitePostCommitPublications,
+} from "../../infra/sqlite-post-commit.js";
+import { runSqliteImmediateTransactionSync } from "../../infra/sqlite-transaction.js";
+import { sessionChanges } from "../../sessions/session-row-changes.js";
+import { requireOpenClawStateDatabaseIdentity } from "../../state/openclaw-state-db-cache.js";
+import {
+  closeOpenClawStateDatabaseByPathAsync,
+  openOpenClawStateDatabase,
+} from "../../state/openclaw-state-db.js";
+import type { WorkerCredentialRecord } from "./credential.js";
+import type { WorkerEnvironmentRecord } from "./environment-record.js";
+import { publishWorkerEnvironmentNativeMutation } from "./store-native-publication.js";
+import {
+  createWorkerEnvironmentProjection,
+  workerEnvironmentProjections,
+} from "./store-projection.js";
+import type { WorkerEnvironmentFacts } from "./store-worker-contract.js";
+
+const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+const environment: WorkerEnvironmentRecord = {
+  environmentId: "environment",
+  providerId: "provider",
+  profileId: "profile",
+  profileSnapshot: { settings: {} },
+  preparation: {
+    purpose: "reserve",
+    key: "preparation",
+    demandAtMs: 1,
+    expiresAtMs: 1_000,
+    consumedAtMs: null,
+  },
+  provisionOperationId: "provision",
+  nodeSetupId: "setup",
+  nodeDeviceId: "node",
+  sharedHost: false,
+  desktop: null,
+  bootstrapReceipt: { bundleHash: "a".repeat(64), openclawVersion: "test", protocolFeatures: [] },
+  ownerEpoch: 1,
+  teardownTerminalState: null,
+  attachedSessionIds: [],
+  lastError: null,
+  createdAtMs: 1,
+  updatedAtMs: 1,
+  stateChangedAtMs: 1,
+  lastActivatedAtMs: null,
+  idleSinceAtMs: null,
+  destroyRequestedAtMs: null,
+  state: "ready",
+  leaseId: "lease",
+  sshEndpoint: null,
+};
+const credential: WorkerCredentialRecord = {
+  environmentId: environment.environmentId,
+  credentialHash: "b".repeat(43),
+  bundleHash: "a".repeat(64),
+  sessionId: null,
+  rpcSetVersion: 1,
+  ownerEpoch: 1,
+  expiresAtMs: 1_000,
+  deliveredAtMs: null,
+};
+function facts(
+  row: WorkerEnvironmentRecord | undefined,
+  withCredential = false,
+): WorkerEnvironmentFacts {
+  return {
+    ids: [environment.environmentId],
+    environments: row ? [row] : [],
+    credentials: withCredential ? [credential] : [],
+    attachments: [],
+  };
+}
+
+it("keeps exact node admission predicates after bootstrap setup binding", () => {
+  const owner = createWorkerEnvironmentProjection();
+  owner.install(
+    facts({
+      ...environment,
+      state: "bootstrapping",
+      nodeDeviceId: null,
+      bootstrapReceipt: null,
+      sshEndpoint: {
+        host: "worker.example.test",
+        port: 22,
+        user: "openclaw",
+        hostKey: "ssh-ed25519 AAAA",
+        keyRef: { source: "file", provider: "worker-keys", id: "/test-key" },
+      },
+    }),
+    owner.nextSequence(),
+    false,
+  );
+  owner.publishPatch(
+    environment.environmentId,
+    { nodeDeviceId: "cloud-device-bound" },
+    owner.nextSequence(),
+  );
+  expect(owner.hasPendingNodeEnrollmentSetup("setup", "cloud-device-bound")).toBe(true);
+  expect(owner.hasNodeEnrollmentOwner("cloud-device-bound")).toBe(true);
+  expect(owner.hasPendingNodeEnrollmentSetup("setup", "different-cloud-device")).toBe(false);
+  expect(owner.hasPendingNodeEnrollmentSetup("missing-setup", "cloud-device-bound")).toBe(false);
+  expect(() => owner.get(environment.environmentId)).toThrow("both SSH and node transports");
+  expect(() => owner.list()).toThrow("both SSH and node transports");
+  owner.close();
+});
+
+it.each([false, true])(
+  "retains native changes across a delayed full receipt (existing row: %s)",
+  (existing) => {
+    const owner = createWorkerEnvironmentProjection();
+    if (existing) {
+      owner.install(facts(environment), owner.nextSequence(), false);
+    }
+    const workerRevision = owner.nextSequence();
+    const token = {};
+    owner.fence([environment.environmentId], token);
+    owner.publishPatch(
+      environment.environmentId,
+      {
+        nodeDeviceId: "paired-node",
+        updatedAtMs: 100,
+        preparation: { ...environment.preparation!, consumedAtMs: 100 },
+      },
+      owner.nextSequence(),
+    );
+    owner.publishPatch(environment.environmentId, { lastActivatedAtMs: 200 }, owner.nextSequence());
+    expect(() => owner.get(environment.environmentId)).toThrow("unsettled mutation");
+    if (!existing) {
+      expect(owner.list()).toEqual([]);
+    }
+    owner.install(
+      facts({ ...environment, lastError: "worker receipt" }, true),
+      workerRevision,
+      false,
+    );
+    expect(() => owner.get(environment.environmentId)).toThrow("unsettled mutation");
+    owner.release(token);
+    expect(owner.get(environment.environmentId)).toMatchObject({
+      nodeDeviceId: "paired-node",
+      updatedAtMs: 100,
+      preparation: { consumedAtMs: 100 },
+      lastActivatedAtMs: 200,
+      lastError: "worker receipt",
+    });
+    expect(owner.credential(environment.environmentId)).toEqual(credential);
+
+    const fresh = { ...environment, nodeDeviceId: "fresh-node", updatedAtMs: 300 };
+    owner.install(facts(fresh), owner.nextSequence(), false);
+    expect(owner.get(environment.environmentId)).toEqual(fresh);
+    owner.publishPatch(environment.environmentId, { updatedAtMs: 400 }, owner.nextSequence());
+    owner.install(facts(undefined), owner.nextSequence(), false);
+    owner.install(facts(environment), owner.nextSequence(), false);
+    expect(owner.get(environment.environmentId)).toEqual(environment);
+    owner.close();
+  },
+);
+
+it("publishes native fields only after commit and before reentrant observers without host reads", async () => {
+  const database = openOpenClawStateDatabase({
+    env: { OPENCLAW_STATE_DIR: tempDirs.make("worker-inventory-patches-") },
+  });
+  const { db } = database;
+  const owner = workerEnvironmentProjections.acquire(() =>
+    requireOpenClawStateDatabaseIdentity(database),
+  );
+  owner.install(facts(environment), owner.nextSequence(), false);
+  const observed: Array<string | null | undefined> = [];
+  const unsubscribe = sessionChanges.subscribe(() => {
+    observed.push(owner.get(environment.environmentId)?.nodeDeviceId);
+  });
+  const transaction = (operation: () => void) =>
+    withSqlitePostCommitPublications(db, () => runSqliteImmediateTransactionSync(db, operation));
+  try {
+    expect(() =>
+      transaction(() => {
+        publishWorkerEnvironmentNativeMutation(db, environment.environmentId, {
+          nodeDeviceId: "rolled-back",
+        });
+        expect(owner.get(environment.environmentId)).toEqual(environment);
+        throw new Error("rollback");
+      }),
+    ).toThrow("rollback");
+    expect(owner.get(environment.environmentId)).toEqual(environment);
+    expect(observed).toEqual([]);
+
+    transaction(() => {
+      deferSqlitePostCommitPublication(db, () => {
+        observed.push(owner.get(environment.environmentId)?.nodeDeviceId);
+        transaction(() =>
+          publishWorkerEnvironmentNativeMutation(db, environment.environmentId, {
+            nodeDeviceId: "second",
+          }),
+        );
+      });
+      const prepare = vi.spyOn(db, "prepare").mockImplementation(() => {
+        throw new Error("Native publication must not query SQLite");
+      });
+      try {
+        publishWorkerEnvironmentNativeMutation(db, environment.environmentId, {
+          nodeDeviceId: "first",
+        });
+        expect(prepare).not.toHaveBeenCalled();
+      } finally {
+        prepare.mockRestore();
+      }
+      expect(owner.get(environment.environmentId)).toEqual(environment);
+    });
+    expect(observed).toEqual(["first", "second", "second"]);
+    expect(owner.get(environment.environmentId)?.nodeDeviceId).toBe("second");
+  } finally {
+    unsubscribe();
+    owner.close();
+    workerEnvironmentProjections.remove(owner);
+    await closeOpenClawStateDatabaseByPathAsync(database.path);
+  }
+});

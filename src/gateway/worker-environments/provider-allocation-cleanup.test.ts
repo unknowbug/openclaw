@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { bindCloudWorkerSetupCompletion } from "../../infra/device-pairing-cloud-worker.js";
 import { WorkerProviderError } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
+import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import * as support from "./service.test-support.js";
 
 describe("worker allocation cleanup", () => {
@@ -36,14 +37,18 @@ describe("worker allocation cleanup", () => {
             throw new Error("expected pending enrollment");
           }
           if (bound) {
-            bindCloudWorkerSetupCompletion({
-              db: support.testState.stateDb.db,
-              completion: {
-                setupId: enrollment.setupId,
-                deviceId: "cleanup-device",
-                completedAtMs: 1_000,
-              },
-            });
+            runOpenClawStateWriteTransaction(
+              ({ db }) =>
+                bindCloudWorkerSetupCompletion({
+                  db,
+                  completion: {
+                    setupId: enrollment.setupId,
+                    deviceId: "cleanup-device",
+                    completedAtMs: 1_000,
+                  },
+                }),
+              { database: support.testState.stateDb },
+            );
           }
           throw WorkerProviderError.cleanupComplete("cleanup-node-lease", primaryError);
         },
@@ -57,7 +62,8 @@ describe("worker allocation cleanup", () => {
             mode: "connect",
             setupCode: "fixture-setup-code",
             setupId: expectDefined(
-              support.testState.store.ensureNodeEnrollment(record.environmentId).nodeSetupId,
+              (await support.testState.store.ensureNodeEnrollment(record.environmentId))
+                .nodeSetupId,
               "node setup identity",
             ),
             openclawVersion: "2026.8.1",
@@ -171,7 +177,7 @@ describe("worker allocation cleanup", () => {
   );
 
   it("cancels a requested environment without resolving a provider", async () => {
-    const intent = support.testState.store.createIntent({
+    const intent = await support.testState.store.createIntent({
       environmentId: "never-provisioned",
       providerId: "unavailable",
       profileId: "removed",
@@ -261,7 +267,7 @@ describe("worker allocation cleanup", () => {
       });
       const pending = expectDefined(support.testState.store.list()[0], "failed preflight intent");
       expect(pending).toMatchObject({ state: "provisioning", leaseId: null });
-      support.testState.store.requestDestroy({
+      await support.testState.store.requestDestroy({
         environmentId: pending.environmentId,
         state: pending.state,
       });
@@ -338,7 +344,7 @@ describe("worker allocation cleanup", () => {
         code: "provider_failure",
       });
       const pending = expectDefined(support.testState.store.list()[0], "unreported allocation");
-      support.testState.store.requestDestroy({
+      await support.testState.store.requestDestroy({
         environmentId: pending.environmentId,
         state: pending.state,
         terminalState,
@@ -419,7 +425,7 @@ describe("worker allocation cleanup", () => {
         if (phase === "resolving") {
           await support.waitForFast(() => expect(resolveAllocation).toHaveBeenCalledOnce());
         }
-        const replacement = support.testState.store.transition({
+        const replacement = await support.testState.store.transition({
           environmentId: pending.environmentId,
           from: "provisioning",
           to: "draining",

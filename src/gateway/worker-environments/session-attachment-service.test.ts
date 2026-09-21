@@ -225,8 +225,8 @@ describe("conversation-owned temporary environments", () => {
     );
     const reserveSpy = vi
       .spyOn(support.testState.store, "createSessionAttachmentIntent")
-      .mockImplementation((...args) => {
-        const reserved = reserve(...args);
+      .mockImplementation(async (...args) => {
+        const reserved = await reserve(...args);
         support.testState.config.tools = { deny: ["screen"] };
         return reserved;
       });
@@ -645,7 +645,7 @@ describe("conversation-owned temporary environments", () => {
     support.getDevelopmentProfile().suspendAfter = "1m";
     const created = await service.createSessionAttachment(request, authorize);
     support.testState.nowMs += 59_000;
-    service.touchSessionAttachment(created.attachment);
+    await service.touchSessionAttachment(created.attachment);
     support.testState.nowMs += 59_000;
     await service.reconcileSessionAttachments();
     expect(service.findSessionAttachment(identity)).toBeDefined();

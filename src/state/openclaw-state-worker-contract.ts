@@ -21,6 +21,7 @@ import type {
   ManagedImageRecord,
   ManagedImageRecordEntry,
 } from "../gateway/managed-image-record-store.types.js";
+import type { WorkerEnvironmentWorkerOperations } from "../gateway/worker-environments/store-worker-contract.js";
 import type { DeferredPluginMigration } from "../infra/deferred-plugin-migrations.js";
 import type { DeliveryQueueWorkerOperations } from "../infra/delivery-queue.worker-contract.js";
 import type * as deviceAuth from "../infra/device-auth-store.kernel.js";
@@ -88,6 +89,7 @@ export type OpenClawStateWorkerOperations = CurrentConversationBindingWorkerOper
   UserProfileWorkerOperations &
   CronStateWorkerOperations &
   FleetRegistryWriteOperations &
+  WorkerEnvironmentWorkerOperations &
   SessionDeliveryWorkerOperations &
   DeliveryQueueWorkerOperations &
   TranscriptReadOperations &

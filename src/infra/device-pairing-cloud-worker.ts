@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { publishWorkerEnvironmentNativeMutation } from "../gateway/worker-environments/store-native-publication.js";
 import { ensureWorkerEnvironmentNodeEnrollmentSchema } from "../state/openclaw-state-db-schema-additive.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
@@ -51,4 +52,8 @@ export function bindCloudWorkerSetupCompletion(params: {
       })
       .where("environment_id", "=", environment.environment_id),
   );
+  publishWorkerEnvironmentNativeMutation(params.db, environment.environment_id, {
+    nodeDeviceId: params.completion.deviceId,
+    updatedAtMs: Math.max(environment.updated_at_ms, params.completion.completedAtMs),
+  });
 }

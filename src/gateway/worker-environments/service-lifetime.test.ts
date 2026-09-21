@@ -20,21 +20,21 @@ describe("worker environment service", () => {
 
   it("warms machine catalogs at startup only for nonterminal environment profiles", async () => {
     const { store } = support.testState;
-    const active = store.createIntent({
+    const active = await store.createIntent({
       environmentId: "startup-worker",
       providerId: "fake",
       profileId: "development",
       profileSnapshot: { settings: { region: "test" } },
       provisionOperationId: "provision:startup",
     });
-    store.createIntent({
+    await store.createIntent({
       environmentId: "terminal-worker",
       providerId: "fake",
       profileId: "terminal",
       profileSnapshot: { settings: { region: "terminal" } },
       provisionOperationId: "provision:terminal",
     });
-    store.transition({ environmentId: "terminal-worker", from: "requested", to: "failed" });
+    await store.transition({ environmentId: "terminal-worker", from: "requested", to: "failed" });
     support.testState.config.cloudWorkers!.profiles!.terminal = {
       provider: "fake",
       settings: { region: "terminal" },
@@ -137,8 +137,8 @@ describe("worker environment service", () => {
   });
 
   it("reconciles unrelated leases concurrently", async () => {
-    support.seedReady("worker-concurrent-a");
-    support.seedReady("worker-concurrent-b");
+    await support.seedReady("worker-concurrent-a");
+    await support.seedReady("worker-concurrent-b");
     const { promise: blocked, resolve: release } = createDeferred();
     const inspected: WorkerLifecycleLease[] = [];
     const provider = support.createProvider({
@@ -173,8 +173,8 @@ describe("worker environment service", () => {
   it("coalesces targeted and full inspection while retaining full-sweep maintenance", async () => {
     const targetId = "worker-targeted-overlap";
     const siblingId = "worker-full-sweep-sibling";
-    support.seedReady(targetId);
-    support.seedReady(siblingId);
+    await support.seedReady(targetId);
+    await support.seedReady(siblingId);
     const targetStarted = createDeferred();
     const siblingStarted = createDeferred();
     const finishTarget = createDeferred();
@@ -289,11 +289,11 @@ describe("worker environment service", () => {
   });
 
   it("owns and clears one periodic reconciliation timer", async () => {
+    const environmentId = "worker-guarded-reconcile";
+    await support.seedReady(environmentId);
     vi.useFakeTimers();
     const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
     const clearIntervalSpy = vi.spyOn(globalThis, "clearInterval");
-    const environmentId = "worker-guarded-reconcile";
-    support.seedReady(environmentId);
     const inspect = vi.fn(async () => ({ status: "active" as const }));
     const liveEvents = support.createLiveEvents();
     const unsubscribeTurnClaimClosed = vi.fn();
@@ -325,10 +325,11 @@ describe("worker environment service", () => {
     await workerService.reconcileEnvironment(environmentId);
     workerService.start();
     workerService.start();
-    await vi.advanceTimersByTimeAsync(0);
+    await workerService.reconcileOnce();
     expect(liveEvents.start).toHaveBeenCalledOnce();
     expect(setIntervalSpy).toHaveBeenCalledExactlyOnceWith(expect.any(Function), 25);
-    await vi.advanceTimersByTimeAsync(25);
+    vi.advanceTimersByTime(25);
+    await workerService.reconcileOnce();
     expect(guardedEnvironmentIds).toEqual([environmentId, environmentId, environmentId]);
     expect(inspect).toHaveBeenCalledTimes(3);
     await uninstallGuard();
@@ -346,7 +347,7 @@ describe("worker environment service", () => {
 
   it("closes new guarded reconciliation and drains the admitted operation on uninstall", async () => {
     const environmentId = "worker-guard-uninstall";
-    support.seedReady(environmentId);
+    await support.seedReady(environmentId);
     const inspect = vi.fn(async () => ({ status: "active" as const }));
     const workerService = support.createService(support.createProvider({ inspect }));
     const { promise: guardPending, resolve: releaseGuard } = createDeferred();
@@ -380,7 +381,7 @@ describe("worker environment service", () => {
     "closes guarded reconciliation admission and drains admitted %s recovery during stop",
     async (method) => {
       const environmentId = "worker-guard-stop";
-      support.seedReady(environmentId);
+      await support.seedReady(environmentId);
       const inspect = vi.fn(async () => ({ status: "active" as const }));
       const workerService = support.createService(support.createProvider({ inspect }));
       const { promise: guardPending, resolve: releaseGuard } = createDeferred();
@@ -518,7 +519,7 @@ describe("worker environment service", () => {
   });
 
   it("starts without blocking gateway startup and drains reconciliation on stop", async () => {
-    support.seedReady("worker-slow-inspection");
+    await support.seedReady("worker-slow-inspection");
     const { promise: inspectionPending, resolve: finishInspection } = createDeferred();
     const inspect = vi.fn(async () => {
       await inspectionPending;

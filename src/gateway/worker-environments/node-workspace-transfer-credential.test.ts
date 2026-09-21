@@ -13,8 +13,8 @@ describe("node workspace credential revocation", () => {
   it.each([false, true])(
     "fences the real credential deletion before tunnel stop (upload pending: %s)",
     async (pendingUpload) => {
-      const ready = support.seedReadyNodeDesktop("transfer-owner");
-      const record = support.testState.store.transition({
+      const ready = await support.seedReadyNodeDesktop("transfer-owner");
+      const record = await support.testState.store.transition({
         environmentId: ready.environmentId,
         from: ready.state,
         to: "attached",
@@ -116,7 +116,7 @@ describe("node workspace credential revocation", () => {
 
         // Teardown deletes this row before awaiting physical tunnel stop. Keep every
         // other owner fact live so the test isolates that immediate revocation fence.
-        support.testState.store.revokeEnvironmentCredential(record.environmentId);
+        await support.testState.store.revokeEnvironmentCredential(record.environmentId);
         expect(support.testState.store.get(record.environmentId)).toMatchObject({
           state: "attached",
           ownerEpoch: record.ownerEpoch,

@@ -211,7 +211,7 @@ describe("worker environment service", () => {
       ownerEpoch: 1,
       sessionId: null,
     });
-    expect(workerService.acknowledgeCredentialDelivery(grant!)).toBe(true);
+    expect(await workerService.acknowledgeCredentialDelivery(grant!)).toBe(true);
     expect(support.testState.store.getCredential(result.environmentId)).toMatchObject({
       deliveredAtMs: support.testState.nowMs,
     });
@@ -471,14 +471,16 @@ describe("worker environment service", () => {
       { id: "override", overrides: { machineClass: "standard", os: "os-b" } },
       { id: "unknown", overrides: { machineClass: "custom", os: "other" } },
     ];
-    const records = cases.map(({ id, overrides }) =>
-      support.testState.store.createIntent({
-        environmentId: id,
-        providerId: "fake",
-        profileId: "development",
-        profileSnapshot: { settings: { region: "test" }, ...overrides },
-        provisionOperationId: `provision:${id}`,
-      }),
+    const records = await Promise.all(
+      cases.map(({ id, overrides }) =>
+        support.testState.store.createIntent({
+          environmentId: id,
+          providerId: "fake",
+          profileId: "development",
+          profileSnapshot: { settings: { region: "test" }, ...overrides },
+          provisionOperationId: `provision:${id}`,
+        }),
+      ),
     );
     const project = (record: (typeof records)[number]) => {
       const placement = {
@@ -563,7 +565,7 @@ describe("worker environment service", () => {
     await service.prepareProjectIntent("development");
     support.getDevelopmentProfile().settings = { region: "replacement" };
     const intent = await service.prepareProjectIntent("development");
-    const environment = support.testState.store.createIntent({
+    const environment = await support.testState.store.createIntent({
       environmentId: "replacement-worker",
       providerId: intent.providerId,
       profileId: "development",
@@ -966,7 +968,7 @@ describe("worker environment service", () => {
   it.each(["direct destroy", "restart reconcile"] as const)(
     "cancels a requested intent without allocating on %s",
     async (mode) => {
-      const intent = support.testState.store.createIntent({
+      const intent = await support.testState.store.createIntent({
         environmentId: `worker-cancel-${mode}`,
         providerId: "fake",
         profileId: "development",
@@ -979,7 +981,7 @@ describe("worker environment service", () => {
       if (mode === "direct destroy") {
         await workerService.destroy(intent.environmentId);
       } else {
-        support.testState.store.requestDestroy({
+        await support.testState.store.requestDestroy({
           environmentId: intent.environmentId,
           state: "requested",
         });
