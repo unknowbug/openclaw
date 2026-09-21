@@ -25,7 +25,7 @@ import type {
   WorkerEnvironmentFacts,
   WorkerEnvironmentMutationMethods,
   WorkerEnvironmentPruneCursor,
-  WorkerEnvironmentPruneObservation,
+  WorkerEnvironmentPrunePage,
 } from "./store-worker-contract.js";
 import type { WorkerEnvironmentPruneInput } from "./store-write-types.js";
 
@@ -506,7 +506,8 @@ export async function createWorkerEnvironmentStore(
     async pruneTerminalEnvironments(input: WorkerEnvironmentPruneInput = {}) {
       assertActive();
       const nowMs = input.nowMs ?? now();
-      const approved: WorkerEnvironmentPruneObservation[] = [];
+      const canPruneDemand = input.canPruneDemand;
+      const approved: WorkerEnvironmentPrunePage["candidates"] = [];
       let cursor: WorkerEnvironmentPruneCursor | undefined;
       for (;;) {
         const reply = await executeExistingOpenClawStateRead(
@@ -522,8 +523,8 @@ export async function createWorkerEnvironmentStore(
         }
         const page = reply.page;
         for (const candidate of page.candidates) {
-          if (input.canPruneDemand?.(candidate.record, nowMs) ?? true) {
-            approved.push(candidate.observed);
+          if (canPruneDemand?.(candidate.record, nowMs) ?? true) {
+            approved.push(candidate);
           }
           if (approved.length === page.limit) {
             break;
@@ -537,11 +538,29 @@ export async function createWorkerEnvironmentStore(
       if (!approved.length) {
         return 0;
       }
-      return mutate(
-        "workerEnvironments.pruneTerminalEnvironments",
-        { input: { approved }, nowMs: options.now?.() },
-        approved.map((row) => row.environment_id),
-      );
+      const demandChanged = new Error("Worker environment demand changed during retention");
+      try {
+        return await mutate(
+          "workerEnvironments.pruneTerminalEnvironments",
+          {
+            input: { approved: approved.map((candidate) => candidate.observed) },
+            nowMs: options.now?.(),
+          },
+          approved.map((candidate) => candidate.observed.environment_id),
+          () => {
+            for (const candidate of approved) {
+              if (!(canPruneDemand?.(candidate.record, nowMs) ?? true)) {
+                throw demandChanged;
+              }
+            }
+          },
+        );
+      } catch (error) {
+        if (error === demandChanged) {
+          return 0;
+        }
+        throw error;
+      }
     },
   };
   return store;

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkerAdmissionHandshake } from "../../../packages/gateway-protocol/src/schema/worker-admission.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import type { WorkerProfile, WorkerSshEndpoint } from "../../plugins/types.js";
@@ -44,12 +44,31 @@ const CREDENTIAL = ["worker", "credential", "fixture"].join("-");
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const PRUNE_NOW_MS = 10 * DAY_MS;
 
+const admission = vi.hoisted(() => ({ beforeCommit: undefined as (() => void) | undefined }));
+vi.mock("../../infra/sqlite-worker-operation-admission.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../infra/sqlite-worker-operation-admission.js")>();
+  return {
+    ...actual,
+    createSqliteWorkerOperationAdmission: (
+      admit: Parameters<typeof actual.createSqliteWorkerOperationAdmission>[0],
+    ) =>
+      actual.createSqliteWorkerOperationAdmission((request, grant) => {
+        if (request.stage === "commit") {
+          admission.beforeCommit?.();
+        }
+        admit(request, grant);
+      }),
+  };
+});
+
 describe("worker environment terminal retention", () => {
   let database: OpenClawStateDatabase;
   let store: WorkerEnvironmentStore;
   let nowMs: number;
   const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
     afterEach(async () => {
+      admission.beforeCommit = undefined;
       await closeOpenClawStateDatabaseAsync();
       closeOpenClawStateDatabaseForTest();
       cleanup();
@@ -193,7 +212,7 @@ describe("worker environment terminal retention", () => {
     expect(
       await store.pruneTerminalEnvironments({ nowMs: PRUNE_NOW_MS, limit: 1, canPruneDemand }),
     ).toBe(1);
-    expect(policyVisits).toEqual(["worker-old-first"]);
+    expect(new Set(policyVisits)).toEqual(new Set(["worker-old-first"]));
     expect(store.get("worker-old-first")).toBeUndefined();
     expect(fallbackPortRows("worker-old-first")).toEqual([]);
     expect(
@@ -206,7 +225,7 @@ describe("worker environment terminal retention", () => {
     expect(
       await store.pruneTerminalEnvironments({ nowMs: PRUNE_NOW_MS, limit: 10, canPruneDemand }),
     ).toBe(1);
-    expect(policyVisits).toEqual(["worker-a-old-second"]);
+    expect(new Set(policyVisits)).toEqual(new Set(["worker-a-old-second"]));
     expect(store.get("worker-a-old-second")).toBeUndefined();
     expect(store.get("worker-referenced")?.state).toBe("orphaned");
     expect(store.get("worker-recent")?.state).toBe("orphaned");
@@ -246,11 +265,53 @@ describe("worker environment terminal retention", () => {
         },
       }),
     ).toBe(1);
-    expect(visited).toHaveLength(257);
-    expect(visited[0]).toBe("worker-0000");
-    expect(visited.at(-1)).toBe("worker-0256");
+    expect(visited.slice(0, 257)).toEqual(
+      Array.from({ length: 257 }, (_, index) => `worker-${String(index).padStart(4, "0")}`),
+    );
+    expect(visited.slice(257).every((id) => id === "worker-0256")).toBe(true);
     expect(database.db.prepare("SELECT count(*) AS count FROM worker_environments").get()).toEqual({
       count: 256,
     });
+  });
+
+  it("defers the batch when live demand changes at worker commit and preserves policy errors", async () => {
+    await seedOrphaned("worker-retention-first", DAY_MS);
+    await seedOrphaned("worker-retention-protected", 2 * DAY_MS);
+    const readRows = () =>
+      database.db.prepare("SELECT * FROM worker_environments ORDER BY environment_id").all();
+    const before = readRows();
+    let protectedDemand = false;
+    let predicateError: Error | undefined;
+    const canPruneDemand = (record: WorkerEnvironmentRecord) => {
+      if (predicateError) {
+        throw predicateError;
+      }
+      return !protectedDemand || record.environmentId !== "worker-retention-protected";
+    };
+    const prune = () =>
+      store.pruneTerminalEnvironments({ nowMs: PRUNE_NOW_MS, limit: 2, canPruneDemand });
+    admission.beforeCommit = () => {
+      protectedDemand = true;
+    };
+    expect(await prune()).toBe(0);
+    expect(protectedDemand).toBe(true);
+    expect(readRows()).toEqual(before);
+    expect(store.list().map((record) => record.environmentId)).toEqual([
+      "worker-retention-first",
+      "worker-retention-protected",
+    ]);
+
+    protectedDemand = false;
+    const failure = new Error("retention provider unavailable");
+    admission.beforeCommit = () => {
+      predicateError = failure;
+    };
+    await expect(prune()).rejects.toBe(failure);
+    expect(readRows()).toEqual(before);
+
+    admission.beforeCommit = undefined;
+    predicateError = undefined;
+    expect(await prune()).toBe(2);
+    expect(store.list()).toEqual([]);
   });
 });
