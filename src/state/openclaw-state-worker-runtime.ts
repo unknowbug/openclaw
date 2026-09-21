@@ -10,7 +10,10 @@ import {
 } from "../agents/harness/native-hook-relay-store.kernel.js";
 import { executeNativeHookRelayMutation } from "../agents/harness/native-hook-relay-store.worker.js";
 import { writeSubagentRunValuesInDatabase } from "../agents/subagents/registry/subagent-registry.store.kernel.js";
-import { listRegistryWorktreesInDatabase } from "../agents/worktrees/registry-read.kernel.js";
+import {
+  listLiveRegistryWorktreeIdsInDatabase,
+  listRegistryWorktreesInDatabase,
+} from "../agents/worktrees/registry-read.kernel.js";
 import { listAuditEventsInDatabase } from "../audit/audit-event-read.kernel.js";
 import { executeAuditWriterCommand } from "../audit/audit-event-writer.worker.js";
 import { readClawInstallSchemaVersionRows } from "../claws/provenance-runtime-read.kernel.js";
@@ -604,6 +607,9 @@ export function executeSharedStateCommand(
   }
   if (command.type === "worktrees.list") {
     return listRegistryWorktreesInDatabase(database.db);
+  }
+  if (command.type === "worktrees.liveIds") {
+    return listLiveRegistryWorktreeIdsInDatabase(database.db);
   }
   if (command.type === "projects.resolve") {
     ensureProjectRegistrySchema(writeOptions);

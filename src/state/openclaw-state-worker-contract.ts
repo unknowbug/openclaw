@@ -179,6 +179,7 @@ export type OpenClawStateWorkerOperations = CurrentConversationBindingWorkerOper
     "projects.findRoot": { input: { repoRoot: string }; output: string | undefined };
     "projects.list": { input: undefined; output: ProjectRegistryRecord[] };
     "worktrees.list": { input: undefined; output: ManagedWorktreeRecord[] };
+    "worktrees.liveIds": { input: undefined; output: string[] };
     "projects.resolve": { input: { id: string }; output: ProjectRegistryRecord | undefined };
     "projects.insert": {
       input: { project: ProjectRegistryInsert; lease: OpenClawStateLeaseIdentity };
