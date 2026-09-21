@@ -34,7 +34,6 @@ export { normalizeWorkerSshEndpoint } from "./store-validation.js";
 export type {
   PreparedEnvironmentPlacementBinding,
   PreparedEnvironmentSelection,
-  WorkerEnvironmentIntentInput,
   WorkerEnvironmentRecord,
 } from "./environment-record.js";
 export type { WorkerEnvironmentTransitionPatch } from "./store-write-types.js";

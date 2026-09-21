@@ -117,7 +117,7 @@ export type WorkerEnvironmentMutationMethods = {
   ): void;
   pruneTerminalEnvironments(input: { approved: WorkerEnvironmentPruneObservation[] }): number;
 };
-export type WorkerEnvironmentMutationMethod = keyof WorkerEnvironmentMutationMethods;
+type WorkerEnvironmentMutationMethod = keyof WorkerEnvironmentMutationMethods;
 
 // Runtime closures stay with the host's transaction and commit admission owner.
 type WithoutAdmission<T> = T extends object
@@ -126,10 +126,10 @@ type WithoutAdmission<T> = T extends object
         ? { placementBinding?: Omit<NonNullable<Binding>, "assertCurrent"> }
         : unknown)
   : T;
-export type WorkerEnvironmentMutationInput<Method extends WorkerEnvironmentMutationMethod> =
+type WorkerEnvironmentMutationInput<Method extends WorkerEnvironmentMutationMethod> =
   WithoutAdmission<Parameters<WorkerEnvironmentMutationMethods[Method]>[0]>;
 
-export type WorkerEnvironmentMutationReceipt<Result> = {
+type WorkerEnvironmentMutationReceipt<Result> = {
   result: Result;
   changed: boolean;
   facts: WorkerEnvironmentFacts;

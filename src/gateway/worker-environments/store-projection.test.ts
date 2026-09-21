@@ -1,10 +1,12 @@
-import { afterEach, expect, it, vi } from "vitest";
+import path from "node:path";
+import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import {
   deferSqlitePostCommitPublication,
   withSqlitePostCommitPublications,
 } from "../../infra/sqlite-post-commit.js";
 import { runSqliteImmediateTransactionSync } from "../../infra/sqlite-transaction.js";
+import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import { sessionChanges } from "../../sessions/session-row-changes.js";
 import { requireOpenClawStateDatabaseIdentity } from "../../state/openclaw-state-db-cache.js";
 import {
@@ -14,10 +16,7 @@ import {
 import type { WorkerCredentialRecord } from "./credential.js";
 import type { WorkerEnvironmentRecord } from "./environment-record.js";
 import { publishWorkerEnvironmentNativeMutation } from "./store-native-publication.js";
-import {
-  createWorkerEnvironmentProjection,
-  workerEnvironmentProjections,
-} from "./store-projection.js";
+import { workerEnvironmentProjections } from "./store-projection.js";
 import type { WorkerEnvironmentFacts } from "./store-worker-contract.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
@@ -75,8 +74,20 @@ function facts(
   };
 }
 
+function acquireProjection() {
+  const identity = readDatabasePathIdentitySync(
+    path.join(tempDirs.make("worker-inventory-projection-"), "state.sqlite"),
+  );
+  const owner = workerEnvironmentProjections.acquire(() => identity);
+  onTestFinished(() => {
+    owner.close();
+    workerEnvironmentProjections.remove(owner);
+  });
+  return owner;
+}
+
 it("keeps exact node admission predicates after bootstrap setup binding", () => {
-  const owner = createWorkerEnvironmentProjection();
+  const owner = acquireProjection();
   owner.install(
     facts({
       ...environment,
@@ -105,13 +116,12 @@ it("keeps exact node admission predicates after bootstrap setup binding", () => 
   expect(owner.hasPendingNodeEnrollmentSetup("missing-setup", "cloud-device-bound")).toBe(false);
   expect(() => owner.get(environment.environmentId)).toThrow("both SSH and node transports");
   expect(() => owner.list()).toThrow("both SSH and node transports");
-  owner.close();
 });
 
 it.each([false, true])(
   "retains native changes across a delayed full receipt (existing row: %s)",
   (existing) => {
-    const owner = createWorkerEnvironmentProjection();
+    const owner = acquireProjection();
     if (existing) {
       owner.install(facts(environment), owner.nextSequence(), false);
     }
@@ -155,7 +165,6 @@ it.each([false, true])(
     owner.install(facts(undefined), owner.nextSequence(), false);
     owner.install(facts(environment), owner.nextSequence(), false);
     expect(owner.get(environment.environmentId)).toEqual(environment);
-    owner.close();
   },
 );
 

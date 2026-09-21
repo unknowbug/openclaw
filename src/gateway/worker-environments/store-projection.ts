@@ -55,7 +55,7 @@ function assertEnvironmentShape(record: WorkerEnvironmentRecord): void {
 }
 
 const ownAdmission = new AsyncLocalStorage<object>();
-export function createWorkerEnvironmentProjection() {
+function createWorkerEnvironmentProjection() {
   const environments = new Map<string, WorkerEnvironmentRecord>();
   const credentials = new Map<string, WorkerCredentialRecord>();
   const attachments = new Map<string, WorkerEnvironmentAttachmentRecord>();
